@@ -3,6 +3,7 @@ import os
 import json
 from datetime import datetime
 from pathlib import Path
+import glob
 
 # 페이지 설정
 st.set_page_config(
@@ -93,48 +94,124 @@ if "conversation_started" not in st.session_state:
 # 대화 내역 제한 (메모리 관리)
 MAX_MESSAGES = 20
 
-# MD 파일 읽기 함수
+# MD 파일 읽기 함수 - 다양한 방법 시도
 @st.cache_data
 def load_markdown_files():
-    """MD 파일들을 읽어서 문자열로 반환"""
+    """MD 파일들을 읽어서 문자열로 반환 - 인코딩 문제 해결"""
     content_dict = {}
     
     # 현재 스크립트의 디렉토리
     current_dir = Path(__file__).parent
     
-    # 읽을 파일들
+    # 읽을 파일들 - 한글 파일명과 영문 대체 파일명
     files_to_read = {
-        "dalguroot": "달러구트_지문.md",
-        "yangban": "양반전.md",
-        "worksheet": "문학이론적용_심화워크시트_교사용정답.md"
+        "dalguroot": ["달러구트_지문.md", "dalguroot.md", "dollarguroot.md"],
+        "yangban": ["양반전.md", "yangban.md", "yangbanjeon.md"],
+        "worksheet": ["문학이론적용_심화워크시트_교사용정답.md", "worksheet.md", "worksheet_teacher.md"]
     }
     
-    for key, filename in files_to_read.items():
-        file_path = current_dir / filename
-        if file_path.exists():
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    content_dict[key] = f.read()
-            except Exception as e:
-                st.warning(f"{filename} 파일을 읽을 수 없습니다: {e}")
-                content_dict[key] = ""
-        else:
-            st.warning(f"{filename} 파일이 없습니다.")
+    # 디버그 정보 출력
+    st.write("🔍 파일 검색 중...")
+    st.write(f"현재 디렉토리: {current_dir}")
+    
+    # 현재 디렉토리의 모든 .md 파일 나열
+    try:
+        md_files = list(current_dir.glob("*.md"))
+        st.write(f"발견된 MD 파일 수: {len(md_files)}")
+        if md_files:
+            st.write("발견된 파일들:")
+            for f in md_files[:10]:  # 최대 10개만 표시
+                st.write(f"  - {f.name}")
+    except Exception as e:
+        st.write(f"파일 목록 조회 오류: {e}")
+    
+    # 각 파일 읽기 시도
+    for key, filenames in files_to_read.items():
+        file_found = False
+        
+        for filename in filenames:
+            if file_found:
+                break
+                
+            file_path = current_dir / filename
+            
+            # 다양한 인코딩으로 시도
+            encodings = ['utf-8', 'utf-8-sig', 'cp949', 'euc-kr', 'latin-1']
+            
+            for encoding in encodings:
+                try:
+                    if file_path.exists():
+                        with open(file_path, 'r', encoding=encoding) as f:
+                            content = f.read()
+                            content_dict[key] = content
+                            st.success(f"✅ {filename} 로드 성공 (인코딩: {encoding})")
+                            file_found = True
+                            break
+                except Exception as e:
+                    continue
+            
+            # 파일명 패턴으로도 검색
+            if not file_found:
+                pattern = filename.replace("_", "*").replace(" ", "*")
+                matching_files = list(current_dir.glob(pattern))
+                if matching_files:
+                    for match_file in matching_files:
+                        for encoding in encodings:
+                            try:
+                                with open(match_file, 'r', encoding=encoding) as f:
+                                    content = f.read()
+                                    content_dict[key] = content
+                                    st.success(f"✅ {match_file.name} 로드 성공 (패턴 매칭)")
+                                    file_found = True
+                                    break
+                            except:
+                                continue
+                        if file_found:
+                            break
+        
+        if not file_found:
+            st.warning(f"⚠️ {key} 파일을 찾을 수 없습니다. 시도한 파일명: {', '.join(filenames)}")
             content_dict[key] = ""
     
     return content_dict
 
 # MD 파일 내용 로드
-try:
-    content_files = load_markdown_files()
-    DALGUROOT_FULL_TEXT = content_files.get("dalguroot", "")
-    YANGBAN_FULL_TEXT = content_files.get("yangban", "")
-    WORKSHEET_FULL_TEXT = content_files.get("worksheet", "")
-except Exception as e:
-    st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
-    DALGUROOT_FULL_TEXT = ""
-    YANGBAN_FULL_TEXT = ""
-    WORKSHEET_FULL_TEXT = ""
+with st.expander("📁 파일 로드 과정", expanded=True):
+    try:
+        content_files = load_markdown_files()
+        DALGUROOT_FULL_TEXT = content_files.get("dalguroot", "")
+        YANGBAN_FULL_TEXT = content_files.get("yangban", "")
+        WORKSHEET_FULL_TEXT = content_files.get("worksheet", "")
+    except Exception as e:
+        st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+        DALGUROOT_FULL_TEXT = ""
+        YANGBAN_FULL_TEXT = ""
+        WORKSHEET_FULL_TEXT = ""
+
+# 파일명 변경 안내
+if not DALGUROOT_FULL_TEXT or not YANGBAN_FULL_TEXT or not WORKSHEET_FULL_TEXT:
+    st.error("""
+    ⚠️ 일부 파일을 찾을 수 없습니다. 
+    
+    **해결 방법:**
+    
+    1. **파일명을 영문으로 변경하기** (권장):
+    ```bash
+    # GitHub에서 파일명 변경
+    git mv "달러구트_지문.md" "dalguroot.md"
+    git mv "양반전.md" "yangban.md"
+    git mv "문학이론적용_심화워크시트_교사용정답.md" "worksheet.md"
+    git commit -m "Rename files to English"
+    git push
+    ```
+    
+    2. **또는 아래 파일명 중 하나로 변경**:
+    - 달러구트_지문.md → dalguroot.md 또는 dollarguroot.md
+    - 양반전.md → yangban.md 또는 yangbanjeon.md
+    - 문학이론적용_심화워크시트_교사용정답.md → worksheet.md 또는 worksheet_teacher.md
+    
+    3. **파일이 app.py와 같은 폴더에 있는지 확인**
+    """)
 
 # 워크시트에서 주요 개념만 추출 (학생용 - 정답 제외)
 WORKSHEET_CONCEPTS = """주요 학습 개념:
@@ -236,23 +313,23 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 파일 로드 상태 표시
-with st.expander("📄 파일 로드 상태"):
+with st.expander("📄 파일 로드 상태 요약"):
     col1, col2, col3 = st.columns(3)
     with col1:
         if DALGUROOT_FULL_TEXT:
-            st.success(f"✅ 달러구트_지문.md ({len(DALGUROOT_FULL_TEXT):,}자)")
+            st.success(f"✅ 달러구트 ({len(DALGUROOT_FULL_TEXT):,}자)")
         else:
-            st.error("❌ 달러구트_지문.md 실패")
+            st.error("❌ 달러구트 실패")
     with col2:
         if YANGBAN_FULL_TEXT:
-            st.success(f"✅ 양반전.md ({len(YANGBAN_FULL_TEXT):,}자)")
+            st.success(f"✅ 양반전 ({len(YANGBAN_FULL_TEXT):,}자)")
         else:
-            st.error("❌ 양반전.md 실패")
+            st.error("❌ 양반전 실패")
     with col3:
         if WORKSHEET_FULL_TEXT:
-            st.success(f"✅ 워크시트.md ({len(WORKSHEET_FULL_TEXT):,}자)")
+            st.success(f"✅ 워크시트 ({len(WORKSHEET_FULL_TEXT):,}자)")
         else:
-            st.error("❌ 워크시트.md 실패")
+            st.error("❌ 워크시트 실패")
 
 # 사이드바
 with st.sidebar:
@@ -341,17 +418,18 @@ st.subheader("🤖 AI 학습 도우미와 대화하기")
 
 # 대화 시작 메시지
 if not st.session_state.conversation_started:
-    welcome_message = """안녕하세요! 저는 여러분의 문학 학습을 도와드리는 AI 도우미예요. 
+    if DALGUROOT_FULL_TEXT and YANGBAN_FULL_TEXT:
+        welcome_message = """안녕하세요! 저는 여러분의 문학 학습을 도와드리는 AI 도우미예요. 
 
-달러구트 꿈 백화점과 양반전의 전체 텍스트, 그리고 워크시트 내용을 읽고 있어서, 
+달러구트 꿈 백화점과 양반전의 전체 텍스트를 읽고 있어서, 
 작품의 구체적인 부분을 인용하며 도움을 드릴 수 있어요.
 
-궁금한 점을 자유롭게 질문해주세요. 예를 들어:
-- "페니가 2층에서 만난 매니저의 성격은?"
-- "양반 증서의 첫 번째와 두 번째의 차이점은?"
-- "작품에서 '아무한테나 팔면 꿈값을 못 받아'라는 말의 의미는?"
+궁금한 점을 자유롭게 질문해주세요!"""
+    else:
+        welcome_message = """안녕하세요! 저는 여러분의 문학 학습을 도와드리는 AI 도우미예요.
 
-정답을 직접 알려드리지는 않지만, 스스로 답을 찾을 수 있도록 도와드릴게요! 😊"""
+⚠️ 현재 일부 작품 파일을 찾을 수 없어 제한적인 도움만 드릴 수 있습니다.
+위의 파일명 변경 안내를 참고해주세요."""
     
     st.info(welcome_message)
 
