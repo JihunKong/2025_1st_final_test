@@ -1,5 +1,4 @@
 import streamlit as st
-import openai
 from openai import OpenAI
 import os
 from datetime import datetime
@@ -13,7 +12,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# OpenAI API 키 설정 - 개선된 오류 처리
+# OpenAI API 키 설정
 try:
     if "OPENAI_API_KEY" not in st.secrets:
         st.error("""OpenAI API 키가 설정되지 않았습니다. 
@@ -29,15 +28,20 @@ try:
         """)
         st.stop()
     
-    # API 키가 문자열인지 확인
-    api_key = st.secrets["OPENAI_API_KEY"]
-    if not isinstance(api_key, str) or not api_key.startswith("sk-"):
-        st.error("OpenAI API 키 형식이 올바르지 않습니다. 'sk-'로 시작하는 문자열이어야 합니다.")
-        st.stop()
+    # API 키 설정
+    api_key = str(st.secrets["OPENAI_API_KEY"])
     
+    # OpenAI 클라이언트 생성
     client = OpenAI(api_key=api_key)
+    
 except Exception as e:
-    st.error(f"OpenAI 클라이언트 초기화 중 오류 발생: {str(e)}")
+    st.error(f"""OpenAI 클라이언트 초기화 중 오류 발생: {str(e)}
+    
+    해결 방법:
+    1. Streamlit Secrets에 OPENAI_API_KEY가 올바르게 설정되었는지 확인
+    2. API 키가 "sk-"로 시작하는지 확인
+    3. 앱을 재부팅해보세요
+    """)
     st.stop()
 
 # 세션 상태 초기화
@@ -143,7 +147,7 @@ SYSTEM_PROMPT = f"""당신은 고등학교 문학 수업의 학습 도우미입�
 
 토큰 정보:
 - 달러구트: 약 7,000 토큰
-- 양반전: 약 3,000 토큰
+- 양반전: 약 3,000 토큰  
 - 워크시트: 약 3,000 토큰
 - 총 컨텍스트: 약 15,000 토큰
 - gpt-4o-mini 컨텍스트 윈도우: 128,000 토큰 (충분함)
