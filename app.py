@@ -1,9 +1,15 @@
 import streamlit as st
-from openai import OpenAI
 import os
-from datetime import datetime
 import json
+from datetime import datetime
 from pathlib import Path
+
+# OpenAI 라이브러리 import - 최신 방식
+try:
+    from openai import OpenAI
+except ImportError:
+    st.error("OpenAI 라이브러리를 설치해주세요: pip install openai")
+    st.stop()
 
 # 페이지 설정
 st.set_page_config(
@@ -12,36 +18,84 @@ st.set_page_config(
     layout="wide"
 )
 
-# OpenAI API 키 설정
-try:
-    if "OPENAI_API_KEY" not in st.secrets:
-        st.error("""OpenAI API 키가 설정되지 않았습니다. 
+# OpenAI 클라이언트 초기화 함수 - 최신 OpenAI SDK v1.0+ 대응
+def initialize_openai_client():
+    """OpenAI 클라이언트를 안전하게 초기화"""
+    try:
+        # 방법 1: Streamlit secrets 사용 (권장)
+        if "OPENAI_API_KEY" in st.secrets:
+            api_key = st.secrets["OPENAI_API_KEY"]
+            
+            # API 키 유효성 검사
+            if not api_key or not api_key.startswith("sk-"):
+                st.error("유효하지 않은 API 키입니다. 'sk-'로 시작하는 키를 입력해주세요.")
+                return None
+            
+            # 환경변수에도 설정 (일부 라이브러리 버전 호환성)
+            os.environ["OPENAI_API_KEY"] = api_key
+            
+            # 클라이언트 생성 시도
+            try:
+                # 방법 1: 직접 API 키 전달
+                client = OpenAI(api_key=api_key)
+                return client
+            except TypeError as e:
+                if "proxies" in str(e):
+                    # Streamlit Cloud proxy 문제 해결
+                    try:
+                        # 방법 2: 환경변수 의존
+                        client = OpenAI()
+                        return client
+                    except:
+                        # 방법 3: 최소 설정
+                        import openai
+                        openai.api_key = api_key
+                        from openai import OpenAI
+                        client = OpenAI()
+                        return client
+                else:
+                    raise e
+                    
+        # 방법 2: 환경변수 사용 (로컬 개발)
+        elif os.getenv("OPENAI_API_KEY"):
+            client = OpenAI()
+            return client
+        else:
+            st.error("""
+            OpenAI API 키가 설정되지 않았습니다.
+            
+            **Streamlit Cloud 설정 방법:**
+            1. 앱 대시보드에서 Settings 클릭
+            2. Secrets 탭 선택
+            3. 다음 내용 입력:
+            ```
+            OPENAI_API_KEY = "sk-실제API키"
+            ```
+            4. Save 클릭 후 앱 재시작
+            
+            **로컬 개발 환경:**
+            터미널에서: `export OPENAI_API_KEY="sk-실제API키"`
+            """)
+            return None
+            
+    except Exception as e:
+        st.error(f"""
+        OpenAI 클라이언트 초기화 실패: {str(e)}
         
-        Streamlit Cloud에서 설정하는 방법:
-        1. 앱 대시보드에서 Settings 클릭
-        2. Secrets 탭 선택
-        3. 다음 내용 입력:
-        ```
-        OPENAI_API_KEY = "sk-..."
-        ```
-        4. Save 클릭
+        **문제 해결 방법:**
+        1. API 키가 올바른지 확인 (https://platform.openai.com/api-keys)
+        2. requirements.txt 확인: openai>=1.0.0
+        3. Streamlit Cloud에서 앱 재부팅
+        
+        **디버그 정보:**
+        - 오류 타입: {type(e).__name__}
+        - 오류 메시지: {str(e)}
         """)
-        st.stop()
-    
-    # API 키 설정
-    api_key = str(st.secrets["OPENAI_API_KEY"])
-    
-    # OpenAI 클라이언트 생성
-    client = OpenAI(api_key=api_key)
-    
-except Exception as e:
-    st.error(f"""OpenAI 클라이언트 초기화 중 오류 발생: {str(e)}
-    
-    해결 방법:
-    1. Streamlit Secrets에 OPENAI_API_KEY가 올바르게 설정되었는지 확인
-    2. API 키가 "sk-"로 시작하는지 확인
-    3. 앱을 재부팅해보세요
-    """)
+        return None
+
+# OpenAI 클라이언트 초기화
+client = initialize_openai_client()
+if not client:
     st.stop()
 
 # 세션 상태 초기화
@@ -75,26 +129,28 @@ def load_markdown_files():
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content_dict[key] = f.read()
+                st.success(f"✅ {filename} 로드 성공", icon="✅")
             except Exception as e:
-                st.warning(f"{filename} 파일을 읽을 수 없습니다: {e}")
+                st.warning(f"⚠️ {filename} 파일 읽기 오류: {e}")
                 content_dict[key] = ""
         else:
-            st.warning(f"{filename} 파일이 없습니다.")
+            st.warning(f"⚠️ {filename} 파일이 없습니다.")
             content_dict[key] = ""
     
     return content_dict
 
 # MD 파일 내용 로드
-try:
-    content_files = load_markdown_files()
-    DALGUROOT_FULL_TEXT = content_files.get("dalguroot", "")
-    YANGBAN_FULL_TEXT = content_files.get("yangban", "")
-    WORKSHEET_FULL_TEXT = content_files.get("worksheet", "")
-except Exception as e:
-    st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
-    DALGUROOT_FULL_TEXT = ""
-    YANGBAN_FULL_TEXT = ""
-    WORKSHEET_FULL_TEXT = ""
+with st.spinner("파일을 로드하는 중..."):
+    try:
+        content_files = load_markdown_files()
+        DALGUROOT_FULL_TEXT = content_files.get("dalguroot", "")
+        YANGBAN_FULL_TEXT = content_files.get("yangban", "")
+        WORKSHEET_FULL_TEXT = content_files.get("worksheet", "")
+    except Exception as e:
+        st.error(f"파일 로드 중 오류: {e}")
+        DALGUROOT_FULL_TEXT = ""
+        YANGBAN_FULL_TEXT = ""
+        WORKSHEET_FULL_TEXT = ""
 
 # 워크시트에서 주요 개념만 추출 (학생용 - 정답 제외)
 WORKSHEET_CONCEPTS = """주요 학습 개념:
@@ -128,10 +184,10 @@ SYSTEM_PROMPT = f"""당신은 고등학교 문학 수업의 학습 도우미입�
 6. 필요한 경우 작품의 구체적인 문장을 인용하여 힌트를 제공하세요
 
 === 달러구트 꿈 백화점 전문 ===
-{DALGUROOT_FULL_TEXT}
+{DALGUROOT_FULL_TEXT if DALGUROOT_FULL_TEXT else "(파일이 로드되지 않았습니다)"}
 
 === 양반전 전문 ===
-{YANGBAN_FULL_TEXT}
+{YANGBAN_FULL_TEXT if YANGBAN_FULL_TEXT else "(파일이 로드되지 않았습니다)"}
 
 === 학습 개념 및 워크시트 ===
 {WORKSHEET_CONCEPTS}
@@ -141,9 +197,6 @@ SYSTEM_PROMPT = f"""당신은 고등학교 문학 수업의 학습 도우미입�
 대화 예시:
 학생: "페니는 어떤 인물인가요?"
 도우미: "좋은 질문이에요! 페니가 각 층을 돌아다니며 어떤 행동을 하는지 살펴볼까요? 특히 '그녀는 일부러 엘리베이터를 이용하지 않고 계단으로 천천히 내려갔다'는 부분에서 페니의 성격을 엿볼 수 있어요. 이 행동이 의미하는 것은 무엇일까요?"
-
-학생: "양반전의 주제가 뭔가요?"
-도우미: "주제를 찾는 좋은 방법이 있어요. 부자가 마지막에 '당신네들이 나를 도둑놈이 되라 하시는군유'라고 말하죠? 이 말이 나오게 된 계기가 무엇인지, 두 번째 증서의 내용을 다시 읽어보세요. 특히 '이웃집 소를 몰아다가 내 밭을 먼저 갈고' 같은 부분이 의미하는 바는 무엇일까요?"
 
 토큰 정보:
 - 달러구트: 약 7,000 토큰
@@ -160,12 +213,20 @@ st.markdown("""
         background-color: #f5f5f5;
     }
     .main-header {
-        background-color: #1e3d59;
+        background: linear-gradient(135deg, #1e3d59 0%, #2e5491 100%);
         color: white;
         padding: 2rem;
         border-radius: 10px;
         margin-bottom: 2rem;
         text-align: center;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+    }
+    .status-container {
+        background-color: white;
+        padding: 1rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .chat-container {
         background-color: white;
@@ -187,13 +248,6 @@ st.markdown("""
         border-left: 4px solid #ff9800;
         margin: 1rem 0;
     }
-    .file-status {
-        background-color: #e8f5e9;
-        padding: 0.5rem;
-        border-radius: 5px;
-        margin: 0.5rem 0;
-        font-size: 0.9rem;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -206,7 +260,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 파일 로드 상태 표시
-with st.expander("📄 파일 로드 상태"):
+with st.expander("📄 파일 로드 상태", expanded=False):
     col1, col2, col3 = st.columns(3)
     with col1:
         if DALGUROOT_FULL_TEXT:
@@ -223,10 +277,19 @@ with st.expander("📄 파일 로드 상태"):
             st.success(f"✅ 워크시트.md ({len(WORKSHEET_FULL_TEXT):,}자)")
         else:
             st.error("❌ 워크시트.md 실패")
+    
+    # 디버그 정보
+    if st.checkbox("디버그 정보 보기"):
+        st.code(f"""
+현재 디렉토리: {Path.cwd()}
+스크립트 위치: {Path(__file__).parent}
+Python 버전: {os.sys.version}
+OpenAI 라이브러리: {hasattr(client, '__version__') and client.__version__ or 'Unknown'}
+        """)
 
 # 사이드바
 with st.sidebar:
-    st.header("학습 가이드")
+    st.header("📚 학습 가이드")
     
     st.subheader("📖 학습 작품")
     st.write("- 달러구트 꿈 백화점 (이미예)")
@@ -248,13 +311,20 @@ with st.sidebar:
     st.subheader("🔍 작품 내 검색")
     search_term = st.text_input("검색어 입력")
     if search_term:
-        st.write("검색 결과:")
-        if search_term in DALGUROOT_FULL_TEXT:
-            st.write("- 달러구트에서 발견됨")
-        if search_term in YANGBAN_FULL_TEXT:
-            st.write("- 양반전에서 발견됨")
+        st.write("**검색 결과:**")
+        found = False
+        if DALGUROOT_FULL_TEXT and search_term in DALGUROOT_FULL_TEXT:
+            st.write("✅ 달러구트에서 발견")
+            found = True
+        if YANGBAN_FULL_TEXT and search_term in YANGBAN_FULL_TEXT:
+            st.write("✅ 양반전에서 발견")
+            found = True
+        if not found:
+            st.write("❌ 검색 결과 없음")
     
-    if st.button("대화 초기화"):
+    st.divider()
+    
+    if st.button("🔄 대화 초기화", use_container_width=True):
         st.session_state.messages = []
         st.session_state.conversation_started = False
         st.rerun()
@@ -265,7 +335,7 @@ col1, col2 = st.columns([1, 1])
 with col1:
     st.subheader("📝 주요 학습 개념")
     
-    with st.expander("소설의 특징"):
+    with st.expander("소설의 특징", expanded=True):
         st.write("""
         - **허구성**: 작가의 상상력으로 창조된 세계
         - **서사성**: 인물, 사건, 배경의 시간적 전개
@@ -288,7 +358,7 @@ with col1:
         """)
 
 with col2:
-    st.subheader("💬 질문하기")
+    st.subheader("💬 빠른 질문")
     
     # 예시 질문 버튼
     example_questions = [
@@ -298,12 +368,13 @@ with col2:
         "3인칭 관찰자 시점의 특징은?"
     ]
     
-    st.write("예시 질문:")
+    st.write("**예시 질문을 클릭해보세요:**")
     cols = st.columns(2)
     for i, question in enumerate(example_questions):
-        if cols[i % 2].button(question, key=f"example_{i}"):
+        if cols[i % 2].button(question, key=f"example_{i}", use_container_width=True):
             st.session_state.messages.append({"role": "user", "content": question})
             st.session_state.conversation_started = True
+            st.rerun()
 
 # 채팅 인터페이스
 st.markdown("---")
@@ -359,7 +430,7 @@ if user_input:
                     {"role": "system", "content": SYSTEM_PROMPT}
                 ] + st.session_state.messages
                 
-                # OpenAI API 호출
+                # OpenAI API 호출 - 최신 방식
                 response = client.chat.completions.create(
                     model="gpt-4o-mini",
                     messages=messages,
@@ -374,7 +445,20 @@ if user_input:
                 st.session_state.messages.append({"role": "assistant", "content": ai_response})
                 
             except Exception as e:
-                st.error(f"오류가 발생했습니다: {str(e)}")
+                error_msg = str(e)
+                if "api_key" in error_msg.lower():
+                    st.error("""
+                    API 키 오류가 발생했습니다.
+                    
+                    **해결 방법:**
+                    1. Streamlit Secrets에서 OPENAI_API_KEY 확인
+                    2. API 키가 'sk-'로 시작하는지 확인
+                    3. 앱을 재시작해보세요
+                    """)
+                elif "rate_limit" in error_msg.lower():
+                    st.error("API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.")
+                else:
+                    st.error(f"오류가 발생했습니다: {error_msg}")
 
 # 페이지 하단 정보
 st.markdown("---")
@@ -391,3 +475,17 @@ with col3:
     total_chars = sum(len(text) for text in loaded_texts if text)
     if total_chars > 0:
         st.caption(f"📊 총 로드된 텍스트: {total_chars:,}자")
+
+# 디버그 모드
+if st.checkbox("🔧 개발자 모드", value=False):
+    st.write("### 시스템 정보")
+    st.json({
+        "session_id": st.session_state.get("session_id", "N/A"),
+        "messages_count": len(st.session_state.messages),
+        "files_loaded": {
+            "dalguroot": bool(DALGUROOT_FULL_TEXT),
+            "yangban": bool(YANGBAN_FULL_TEXT),
+            "worksheet": bool(WORKSHEET_FULL_TEXT)
+        },
+        "api_client": "OpenAI" if client else "Not initialized"
+    })
