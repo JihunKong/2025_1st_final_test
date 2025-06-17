@@ -110,20 +110,7 @@ def load_markdown_files():
         "worksheet": ["문학이론적용_심화워크시트_교사용정답.md", "worksheet.md", "worksheet_teacher.md"]
     }
     
-    # 디버그 정보 출력
-    st.write("🔍 파일 검색 중...")
-    st.write(f"현재 디렉토리: {current_dir}")
-    
-    # 현재 디렉토리의 모든 .md 파일 나열
-    try:
-        md_files = list(current_dir.glob("*.md"))
-        st.write(f"발견된 MD 파일 수: {len(md_files)}")
-        if md_files:
-            st.write("발견된 파일들:")
-            for f in md_files[:10]:  # 최대 10개만 표시
-                st.write(f"  - {f.name}")
-    except Exception as e:
-        st.write(f"파일 목록 조회 오류: {e}")
+    # 파일 검색
     
     # 각 파일 읽기 시도
     for key, filenames in files_to_read.items():
@@ -144,7 +131,6 @@ def load_markdown_files():
                         with open(file_path, 'r', encoding=encoding) as f:
                             content = f.read()
                             content_dict[key] = content
-                            st.success(f"✅ {filename} 로드 성공 (인코딩: {encoding})")
                             file_found = True
                             break
                 except Exception as e:
@@ -161,7 +147,6 @@ def load_markdown_files():
                                 with open(match_file, 'r', encoding=encoding) as f:
                                     content = f.read()
                                     content_dict[key] = content
-                                    st.success(f"✅ {match_file.name} 로드 성공 (패턴 매칭)")
                                     file_found = True
                                     break
                             except:
@@ -170,23 +155,21 @@ def load_markdown_files():
                             break
         
         if not file_found:
-            st.warning(f"⚠️ {key} 파일을 찾을 수 없습니다. 시도한 파일명: {', '.join(filenames)}")
             content_dict[key] = ""
     
     return content_dict
 
 # MD 파일 내용 로드
-with st.expander("📁 파일 로드 과정", expanded=True):
-    try:
-        content_files = load_markdown_files()
-        DALGUROOT_FULL_TEXT = content_files.get("dalguroot", "")
-        YANGBAN_FULL_TEXT = content_files.get("yangban", "")
-        WORKSHEET_FULL_TEXT = content_files.get("worksheet", "")
-    except Exception as e:
-        st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
-        DALGUROOT_FULL_TEXT = ""
-        YANGBAN_FULL_TEXT = ""
-        WORKSHEET_FULL_TEXT = ""
+try:
+    content_files = load_markdown_files()
+    DALGUROOT_FULL_TEXT = content_files.get("dalguroot", "")
+    YANGBAN_FULL_TEXT = content_files.get("yangban", "")
+    WORKSHEET_FULL_TEXT = content_files.get("worksheet", "")
+except Exception as e:
+    st.error(f"파일을 읽는 중 오류가 발생했습니다: {e}")
+    DALGUROOT_FULL_TEXT = ""
+    YANGBAN_FULL_TEXT = ""
+    WORKSHEET_FULL_TEXT = ""
 
 # 파일명 변경 안내
 if not DALGUROOT_FULL_TEXT or not YANGBAN_FULL_TEXT or not WORKSHEET_FULL_TEXT:
@@ -312,24 +295,8 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# 파일 로드 상태 표시
-with st.expander("📄 파일 로드 상태 요약"):
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        if DALGUROOT_FULL_TEXT:
-            st.success(f"✅ 달러구트 ({len(DALGUROOT_FULL_TEXT):,}자)")
-        else:
-            st.error("❌ 달러구트 실패")
-    with col2:
-        if YANGBAN_FULL_TEXT:
-            st.success(f"✅ 양반전 ({len(YANGBAN_FULL_TEXT):,}자)")
-        else:
-            st.error("❌ 양반전 실패")
-    with col3:
-        if WORKSHEET_FULL_TEXT:
-            st.success(f"✅ 워크시트 ({len(WORKSHEET_FULL_TEXT):,}자)")
-        else:
-            st.error("❌ 워크시트 실패")
+# 파일 로드 상태 확인
+file_load_success = bool(DALGUROOT_FULL_TEXT and YANGBAN_FULL_TEXT and WORKSHEET_FULL_TEXT)
 
 # 사이드바
 with st.sidebar:
@@ -396,21 +363,22 @@ with col1:
 
 with col2:
     st.subheader("💬 질문하기")
+    st.info("작품이나 문학 이론에 대해 궁금한 점을 자유롭게 질문해보세요!")
     
-    # 예시 질문 버튼
-    example_questions = [
-        "페니는 왜 계단으로 내려갔을까요?",
-        "양반전에서 풍자하는 것은 무엇인가요?",
-        "내적 갈등과 외적 갈등의 차이는?",
-        "3인칭 관찰자 시점의 특징은?"
-    ]
+    # 추천 질문 - 클릭하면 입력창에 자동 입력
+    st.write("**추천 질문 (클릭하면 자동 입력):**")
     
-    st.write("예시 질문:")
-    cols = st.columns(2)
-    for i, question in enumerate(example_questions):
-        if cols[i % 2].button(question, key=f"example_{i}"):
-            st.session_state.messages.append({"role": "user", "content": question})
-            st.session_state.conversation_started = True
+    if st.button("🔍 페니는 왜 계단으로 내려갔을까요?", key="q1"):
+        st.session_state.auto_fill_question = "페니는 왜 계단으로 내려갔을까요?"
+        
+    if st.button("📖 양반전에서 풍자하는 것은 무엇인가요?", key="q2"):
+        st.session_state.auto_fill_question = "양반전에서 풍자하는 것은 무엇인가요?"
+        
+    if st.button("💭 내적 갈등과 외적 갈등의 차이는?", key="q3"):
+        st.session_state.auto_fill_question = "내적 갈등과 외적 갈등의 차이는?"
+        
+    if st.button("👁️ 3인칭 관찰자 시점의 특징은?", key="q4"):
+        st.session_state.auto_fill_question = "3인칭 관찰자 시점의 특징은?"
 
 # 채팅 인터페이스
 st.markdown("---")
@@ -442,8 +410,13 @@ with chat_container:
         with st.chat_message(message["role"]):
             st.write(message["content"])
 
-# 사용자 입력
-user_input = st.chat_input("질문을 입력하세요...")
+# 사용자 입력 - 자동 입력 처리
+if "auto_fill_question" in st.session_state and st.session_state.auto_fill_question:
+    # 자동 입력된 질문이 있으면 사용
+    user_input = st.session_state.auto_fill_question
+    st.session_state.auto_fill_question = ""  # 사용 후 초기화
+else:
+    user_input = st.chat_input("질문을 입력하세요...")
 
 if user_input:
     st.session_state.conversation_started = True
